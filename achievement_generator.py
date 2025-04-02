@@ -2,7 +2,7 @@
 
 import click
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import datetime
 import os
 
@@ -18,6 +18,8 @@ BACKGROUND_COLOR = (22, 24, 28)  # Darker background
 CONTAINER_COLOR = (38, 40, 44)  # Achievement container color
 TEXT_COLOR = (255, 255, 255)  # White text
 DESC_COLOR = (128, 128, 128)  # Lighter gray for description
+GLOW_COLOR = (255, 180, 50)  # Warmer, more vibrant golden color
+GLOW_ALPHA = 160  # Increased glow opacity
 
 # Font paths - try multiple options to ensure compatibility
 FONT_PATHS = [
@@ -28,6 +30,21 @@ FONT_PATHS = [
 FONT_PATHS_REGULAR = [
     "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
 ]
+
+def create_glow_mask(size: tuple[int, int], radius: int = 40) -> Image.Image:
+    """Create a radial gradient mask for the glow effect."""
+    mask = Image.new('L', size, 0)
+    draw = ImageDraw.Draw(mask)
+    
+    # Create multiple circles with decreasing opacity for a smooth gradient
+    for i in range(radius, 0, -1):
+        opacity = int((1 - (i / radius) ** 1.5) * 255)  # Modified power for sharper falloff
+        draw.ellipse([
+            size[0]//2 - i, size[1]//2 - i,
+            size[0]//2 + i, size[1]//2 + i
+        ], fill=opacity)
+    
+    return mask
 
 def find_font(font_paths: list[str], size: int) -> ImageFont.FreeTypeFont:
     """Try to load a font from the list of possible paths."""
@@ -104,6 +121,32 @@ def create_achievement_frame(name: str, description: str, icon_path: Path, is_ra
     icon_x = PADDING
     icon_y = (ACHIEVEMENT_HEIGHT - ICON_SIZE) // 2
     text_start_x = icon_x + ICON_SIZE + PADDING
+    
+    # Add glow effect for rare achievements
+    if is_rare:
+        # Create a larger canvas for the glow
+        glow_size = ICON_SIZE + 80  # Increased glow size
+        glow = Image.new('RGBA', (glow_size, glow_size), (0, 0, 0, 0))
+        
+        # Create and apply the glow mask
+        mask = create_glow_mask((glow_size, glow_size))
+        
+        # Apply the glow color with alpha
+        glow_pixels = glow.load()
+        mask_pixels = mask.load()
+        for y in range(glow_size):
+            for x in range(glow_size):
+                alpha = mask_pixels[x, y]
+                glow_pixels[x, y] = (*GLOW_COLOR, min(alpha, GLOW_ALPHA))
+        
+        # Apply multiple blur passes for a smoother effect
+        glow = glow.filter(ImageFilter.GaussianBlur(5))
+        glow = glow.filter(ImageFilter.GaussianBlur(3))
+        
+        # Paste the glow
+        achievement.paste(glow, 
+                        (icon_x - 40, icon_y - 40),  # Adjusted for larger glow
+                        glow)
     
     # Paste the icon
     achievement.paste(icon, (icon_x, icon_y), icon)
