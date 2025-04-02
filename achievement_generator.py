@@ -7,16 +7,29 @@ import datetime
 import os
 
 # Constants for achievement appearance
-ACHIEVEMENT_WIDTH = 184
-ACHIEVEMENT_HEIGHT = 184
+ACHIEVEMENT_WIDTH = 520  # Wider to match Steam style
+ACHIEVEMENT_HEIGHT = 96  # Shorter to match Steam style
 ICON_SIZE = 64
-PADDING = 10
-TITLE_FONT_SIZE = 14
-DESC_FONT_SIZE = 11
-GLOW_COLOR = (255, 215, 0, 180)  # Golden color with alpha
-BACKGROUND_COLOR = (32, 34, 37)  # Steam's dark theme background
+PADDING = 16
+CORNER_RADIUS = 4
+TITLE_FONT_SIZE = 15
+DESC_FONT_SIZE = 13
+BACKGROUND_COLOR = (22, 24, 28)  # Darker background
+CONTAINER_COLOR = (38, 40, 44)  # Achievement container color
 TEXT_COLOR = (255, 255, 255)  # White text
-DESC_COLOR = (180, 180, 180)  # Gray color for description
+DESC_COLOR = (128, 128, 128)  # Lighter gray for description
+
+def rounded_rectangle(draw: ImageDraw, xy: tuple, corner_radius: int, fill=None):
+    """Draw a rounded rectangle"""
+    x1, y1, x2, y2 = xy
+    draw.rectangle((x1 + corner_radius, y1, x2 - corner_radius, y2), fill=fill)
+    draw.rectangle((x1, y1 + corner_radius, x2, y2 - corner_radius), fill=fill)
+    
+    # Draw corners
+    draw.pieslice((x1, y1, x1 + corner_radius * 2, y1 + corner_radius * 2), 180, 270, fill=fill)
+    draw.pieslice((x2 - corner_radius * 2, y1, x2, y1 + corner_radius * 2), 270, 360, fill=fill)
+    draw.pieslice((x1, y2 - corner_radius * 2, x1 + corner_radius * 2, y2), 90, 180, fill=fill)
+    draw.pieslice((x2 - corner_radius * 2, y2 - corner_radius * 2, x2, y2), 0, 90, fill=fill)
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     """Wrap text to fit within max_width using the specified font."""
@@ -42,24 +55,28 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[s
     return lines
 
 def create_achievement_frame(name: str, description: str, icon_path: Path, is_rare: bool = False) -> Image.Image:
-    # Create base image with Steam's dark theme background
+    # Create base image with dark background
     achievement = Image.new('RGBA', (ACHIEVEMENT_WIDTH, ACHIEVEMENT_HEIGHT), BACKGROUND_COLOR)
     draw = ImageDraw.Draw(achievement)
+    
+    # Draw rounded rectangle container
+    container_padding = 2
+    rounded_rectangle(draw, 
+                     (container_padding, 
+                      container_padding, 
+                      ACHIEVEMENT_WIDTH - container_padding, 
+                      ACHIEVEMENT_HEIGHT - container_padding),
+                     CORNER_RADIUS,
+                     CONTAINER_COLOR)
     
     # Load and resize the achievement icon
     icon = Image.open(icon_path).convert('RGBA')
     icon = icon.resize((ICON_SIZE, ICON_SIZE), Image.Resampling.LANCZOS)
     
     # Calculate positions
-    icon_x = (ACHIEVEMENT_WIDTH - ICON_SIZE) // 2
-    icon_y = PADDING
-    
-    # Add glow effect for rare achievements
-    if is_rare:
-        glow = Image.new('RGBA', (ICON_SIZE + 20, ICON_SIZE + 20), (0, 0, 0, 0))
-        glow_draw = ImageDraw.Draw(glow)
-        glow_draw.ellipse([0, 0, ICON_SIZE + 20, ICON_SIZE + 20], fill=GLOW_COLOR)
-        achievement.paste(glow, (icon_x - 10, icon_y - 10), glow)
+    icon_x = PADDING
+    icon_y = (ACHIEVEMENT_HEIGHT - ICON_SIZE) // 2
+    text_start_x = icon_x + ICON_SIZE + PADDING
     
     # Paste the icon
     achievement.paste(icon, (icon_x, icon_y), icon)
@@ -73,27 +90,20 @@ def create_achievement_frame(name: str, description: str, icon_path: Path, is_ra
         desc_font = title_font
     
     # Calculate text area width
-    text_area_width = ACHIEVEMENT_WIDTH - (2 * PADDING)
+    text_area_width = ACHIEVEMENT_WIDTH - text_start_x - PADDING
     
-    # Wrap and draw title
+    # Draw title
+    text_y = icon_y + 5  # Align with top of icon with small offset
     title_lines = wrap_text(name, title_font, text_area_width)
-    text_y = icon_y + ICON_SIZE + PADDING
-    
-    for line in title_lines:
-        text_width = title_font.getlength(line)
-        text_x = (ACHIEVEMENT_WIDTH - text_width) // 2
-        draw.text((text_x, text_y), line, font=title_font, fill=TEXT_COLOR)
+    for line in title_lines[:2]:  # Limit to 2 lines
+        draw.text((text_start_x, text_y), line, font=title_font, fill=TEXT_COLOR)
         text_y += TITLE_FONT_SIZE + 2
     
-    # Add small padding between title and description
-    text_y += 4
-    
-    # Wrap and draw description
+    # Draw description
+    text_y += 4  # Space between title and description
     desc_lines = wrap_text(description, desc_font, text_area_width)
-    for line in desc_lines:
-        text_width = desc_font.getlength(line)
-        text_x = (ACHIEVEMENT_WIDTH - text_width) // 2
-        draw.text((text_x, text_y), line, font=desc_font, fill=DESC_COLOR)
+    for line in desc_lines[:2]:  # Limit to 2 lines
+        draw.text((text_start_x, text_y), line, font=desc_font, fill=DESC_COLOR)
         text_y += DESC_FONT_SIZE + 1
     
     return achievement
