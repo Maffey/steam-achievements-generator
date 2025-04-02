@@ -19,6 +19,33 @@ CONTAINER_COLOR = (38, 40, 44)  # Achievement container color
 TEXT_COLOR = (255, 255, 255)  # White text
 DESC_COLOR = (128, 128, 128)  # Lighter gray for description
 
+# Font paths - try multiple options to ensure compatibility
+FONT_PATHS = [
+    "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",  # Fallback to regular if bold not found
+]
+
+FONT_PATHS_REGULAR = [
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+]
+
+def find_font(font_paths: list[str], size: int) -> ImageFont.FreeTypeFont:
+    """Try to load a font from the list of possible paths."""
+    # First try the specified paths
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+            
+    # If that fails, try to find Noto Sans using fc-match
+    try:
+        import subprocess
+        font_path = subprocess.check_output(['fc-match', '-f', '%{file}', 'Noto Sans']).decode('utf-8').strip()
+        return ImageFont.truetype(font_path, size)
+    except:
+        return ImageFont.load_default()
+
 def rounded_rectangle(draw: ImageDraw, xy: tuple, corner_radius: int, fill=None):
     """Draw a rounded rectangle"""
     x1, y1, x2, y2 = xy
@@ -81,13 +108,9 @@ def create_achievement_frame(name: str, description: str, icon_path: Path, is_ra
     # Paste the icon
     achievement.paste(icon, (icon_x, icon_y), icon)
     
-    # Load fonts
-    try:
-        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", TITLE_FONT_SIZE)
-        desc_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", DESC_FONT_SIZE)
-    except OSError:
-        title_font = ImageFont.load_default()
-        desc_font = title_font
+    # Load fonts with UTF-8 support
+    title_font = find_font(FONT_PATHS, TITLE_FONT_SIZE)
+    desc_font = find_font(FONT_PATHS_REGULAR, DESC_FONT_SIZE)
     
     # Calculate text area width
     text_area_width = ACHIEVEMENT_WIDTH - text_start_x - PADDING
