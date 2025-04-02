@@ -13,12 +13,13 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python achievement_generator.py --name "Achievement Name" --image path/to/image.png --rare
+python achievement_generator.py --name "Achievement Name" --description "Achievement description text" --image path/to/image.png --rare
 ```
 
 ### Arguments
 
 - `--name`: The name of the achievement (required)
+- `--description`: The description of the achievement (required)
 - `--image`: Path to the achievement icon image (required)
 - `--rare`: Flag to indicate if the achievement is rare (optional, adds golden glow effect)
 
