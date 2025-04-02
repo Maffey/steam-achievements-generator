@@ -2,11 +2,14 @@
 
 A Python CLI tool that generates fake Steam achievement images. This tool allows you to create achievement images that look  like real Steam achievements, including the special golden glow effect for rare achievements.
 
+Created using AI agent in Cursor.
+
 
 ## Installation
 
 1. Clone this repository
 2. Install the required dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
