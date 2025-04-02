@@ -1,6 +1,7 @@
 # Fake Steam Achievements Generator
 
-A Python CLI tool that generates fake Steam achievement images. This tool allows you to create achievement images that look exactly like real Steam achievements, including the special golden glow effect for rare achievements.
+A Python CLI tool that generates fake Steam achievement images. This tool allows you to create achievement images that look  like real Steam achievements, including the special golden glow effect for rare achievements.
+
 
 ## Installation
 
