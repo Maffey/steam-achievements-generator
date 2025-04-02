@@ -4,180 +4,254 @@ import click
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import datetime
-import os
+from dataclasses import dataclass
+from typing import Tuple, Optional
 
-# Constants for achievement appearance
-ACHIEVEMENT_WIDTH = 520  # Wider to match Steam style
-ACHIEVEMENT_HEIGHT = 96  # Shorter to match Steam style
-ICON_SIZE = 64
-PADDING = 16
-CORNER_RADIUS = 4
-TITLE_FONT_SIZE = 15
-DESC_FONT_SIZE = 13
-BACKGROUND_COLOR = (22, 24, 28)  # Darker background
-CONTAINER_COLOR = (38, 40, 44)  # Achievement container color
-TEXT_COLOR = (255, 255, 255)  # White text
-DESC_COLOR = (128, 128, 128)  # Lighter gray for description
-GLOW_COLOR = (255, 180, 50)  # Warmer, more vibrant golden color
-GLOW_ALPHA = 160  # Increased glow opacity
+@dataclass
+class AchievementStyle:
+    """Configuration class for achievement appearance."""
+    width: int = 520
+    height: int = 96
+    icon_size: int = 64
+    padding: int = 16
+    corner_radius: int = 4
+    title_font_size: int = 15
+    desc_font_size: int = 13
+    background_color: Tuple[int, int, int] = (22, 24, 28)
+    container_color: Tuple[int, int, int] = (38, 40, 44)
+    text_color: Tuple[int, int, int] = (255, 255, 255)
+    desc_color: Tuple[int, int, int] = (128, 128, 128)
+    glow_color: Tuple[int, int, int] = (255, 180, 50)
+    glow_alpha: int = 160
+    glow_size_extra: int = 80
+    glow_radius: int = 40
 
-# Font paths - try multiple options to ensure compatibility
-FONT_PATHS = [
-    "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
-    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",  # Fallback to regular if bold not found
-]
-
-FONT_PATHS_REGULAR = [
-    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
-]
-
-def create_glow_mask(size: tuple[int, int], radius: int = 40) -> Image.Image:
-    """Create a radial gradient mask for the glow effect."""
-    mask = Image.new('L', size, 0)
-    draw = ImageDraw.Draw(mask)
+class FontManager:
+    """Handles font loading and management."""
+    FONT_PATHS = [
+        "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+    ]
     
-    # Create multiple circles with decreasing opacity for a smooth gradient
-    for i in range(radius, 0, -1):
-        opacity = int((1 - (i / radius) ** 1.5) * 255)  # Modified power for sharper falloff
-        draw.ellipse([
-            size[0]//2 - i, size[1]//2 - i,
-            size[0]//2 + i, size[1]//2 + i
-        ], fill=opacity)
+    FONT_PATHS_REGULAR = [
+        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+    ]
     
-    return mask
-
-def find_font(font_paths: list[str], size: int) -> ImageFont.FreeTypeFont:
-    """Try to load a font from the list of possible paths."""
-    # First try the specified paths
-    for path in font_paths:
+    @staticmethod
+    def find_font(font_paths: list[str], size: int) -> ImageFont.FreeTypeFont:
+        """Load a font from the list of possible paths."""
+        for path in font_paths:
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+                
         try:
-            return ImageFont.truetype(path, size)
-        except OSError:
-            continue
-            
-    # If that fails, try to find Noto Sans using fc-match
-    try:
-        import subprocess
-        font_path = subprocess.check_output(['fc-match', '-f', '%{file}', 'Noto Sans']).decode('utf-8').strip()
-        return ImageFont.truetype(font_path, size)
-    except:
-        return ImageFont.load_default()
+            import subprocess
+            font_path = subprocess.check_output(
+                ['fc-match', '-f', '%{file}', 'Noto Sans']
+            ).decode('utf-8').strip()
+            return ImageFont.truetype(font_path, size)
+        except:
+            return ImageFont.load_default()
 
-def rounded_rectangle(draw: ImageDraw, xy: tuple, corner_radius: int, fill=None):
-    """Draw a rounded rectangle"""
-    x1, y1, x2, y2 = xy
-    draw.rectangle((x1 + corner_radius, y1, x2 - corner_radius, y2), fill=fill)
-    draw.rectangle((x1, y1 + corner_radius, x2, y2 - corner_radius), fill=fill)
-    
-    # Draw corners
-    draw.pieslice((x1, y1, x1 + corner_radius * 2, y1 + corner_radius * 2), 180, 270, fill=fill)
-    draw.pieslice((x2 - corner_radius * 2, y1, x2, y1 + corner_radius * 2), 270, 360, fill=fill)
-    draw.pieslice((x1, y2 - corner_radius * 2, x1 + corner_radius * 2, y2), 90, 180, fill=fill)
-    draw.pieslice((x2 - corner_radius * 2, y2 - corner_radius * 2, x2, y2), 0, 90, fill=fill)
+class TextRenderer:
+    """Handles text wrapping and rendering."""
+    @staticmethod
+    def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+        """Wrap text to fit within max_width using the specified font."""
+        words = text.split()
+        lines = []
+        current_line = []
+        
+        for word in words:
+            current_line.append(word)
+            text_width = font.getlength(' '.join(current_line))
+            if text_width > max_width:
+                if len(current_line) > 1:
+                    current_line.pop()
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+                    current_line = []
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        return lines
 
-def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
-    """Wrap text to fit within max_width using the specified font."""
-    words = text.split()
-    lines = []
-    current_line = []
-    
-    for word in words:
-        current_line.append(word)
-        text_width = font.getlength(' '.join(current_line))
-        if text_width > max_width:
-            if len(current_line) > 1:
-                current_line.pop()
-                lines.append(' '.join(current_line))
-                current_line = [word]
-            else:
-                lines.append(word)
-                current_line = []
-    
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    return lines
+    @staticmethod
+    def render_text_block(
+        draw: ImageDraw.Draw,
+        text: str,
+        font: ImageFont.FreeTypeFont,
+        start_pos: Tuple[int, int],
+        max_width: int,
+        color: Tuple[int, int, int],
+        line_spacing: int
+    ) -> int:
+        """Render a block of text and return the new Y position."""
+        lines = TextRenderer.wrap_text(text, font, max_width)
+        current_y = start_pos[1]
+        
+        for line in lines[:2]:  # Limit to 2 lines
+            draw.text((start_pos[0], current_y), line, font=font, fill=color)
+            current_y += line_spacing
+        
+        return current_y
 
-def create_achievement_frame(name: str, description: str, icon_path: Path, is_rare: bool = False) -> Image.Image:
-    # Create base image with dark background
-    achievement = Image.new('RGBA', (ACHIEVEMENT_WIDTH, ACHIEVEMENT_HEIGHT), BACKGROUND_COLOR)
-    draw = ImageDraw.Draw(achievement)
-    
-    # Draw rounded rectangle container
-    container_padding = 2
-    rounded_rectangle(draw, 
-                     (container_padding, 
-                      container_padding, 
-                      ACHIEVEMENT_WIDTH - container_padding, 
-                      ACHIEVEMENT_HEIGHT - container_padding),
-                     CORNER_RADIUS,
-                     CONTAINER_COLOR)
-    
-    # Load and resize the achievement icon
-    icon = Image.open(icon_path).convert('RGBA')
-    icon = icon.resize((ICON_SIZE, ICON_SIZE), Image.Resampling.LANCZOS)
-    
-    # Calculate positions
-    icon_x = PADDING
-    icon_y = (ACHIEVEMENT_HEIGHT - ICON_SIZE) // 2
-    text_start_x = icon_x + ICON_SIZE + PADDING
-    
-    # Add glow effect for rare achievements
-    if is_rare:
-        # Create a larger canvas for the glow
-        glow_size = ICON_SIZE + 80  # Increased glow size
+class GlowEffect:
+    """Handles creation and application of the glow effect."""
+    @staticmethod
+    def create_glow_mask(size: Tuple[int, int], radius: int = 40) -> Image.Image:
+        """Create a radial gradient mask for the glow effect."""
+        mask = Image.new('L', size, 0)
+        draw = ImageDraw.Draw(mask)
+        
+        for i in range(radius, 0, -1):
+            opacity = int((1 - (i / radius) ** 1.5) * 255)
+            draw.ellipse([
+                size[0]//2 - i, size[1]//2 - i,
+                size[0]//2 + i, size[1]//2 + i
+            ], fill=opacity)
+        
+        return mask
+
+    @staticmethod
+    def apply_glow(
+        base_image: Image.Image,
+        icon_pos: Tuple[int, int],
+        style: AchievementStyle
+    ) -> None:
+        """Apply glow effect to the base image."""
+        glow_size = style.icon_size + style.glow_size_extra
         glow = Image.new('RGBA', (glow_size, glow_size), (0, 0, 0, 0))
         
-        # Create and apply the glow mask
-        mask = create_glow_mask((glow_size, glow_size))
+        mask = GlowEffect.create_glow_mask((glow_size, glow_size), style.glow_radius)
         
-        # Apply the glow color with alpha
         glow_pixels = glow.load()
         mask_pixels = mask.load()
         for y in range(glow_size):
             for x in range(glow_size):
                 alpha = mask_pixels[x, y]
-                glow_pixels[x, y] = (*GLOW_COLOR, min(alpha, GLOW_ALPHA))
+                glow_pixels[x, y] = (*style.glow_color, min(alpha, style.glow_alpha))
         
-        # Apply multiple blur passes for a smoother effect
         glow = glow.filter(ImageFilter.GaussianBlur(5))
         glow = glow.filter(ImageFilter.GaussianBlur(3))
         
-        # Paste the glow
-        achievement.paste(glow, 
-                        (icon_x - 40, icon_y - 40),  # Adjusted for larger glow
+        offset = style.glow_size_extra // 2
+        base_image.paste(glow, 
+                        (icon_pos[0] - offset, icon_pos[1] - offset),
                         glow)
+
+class AchievementGenerator:
+    """Main class for generating achievements."""
+    def __init__(self, style: Optional[AchievementStyle] = None):
+        self.style = style or AchievementStyle()
+        self.font_manager = FontManager()
+        self.text_renderer = TextRenderer()
     
-    # Paste the icon
-    achievement.paste(icon, (icon_x, icon_y), icon)
-    
-    # Load fonts with UTF-8 support
-    title_font = find_font(FONT_PATHS, TITLE_FONT_SIZE)
-    desc_font = find_font(FONT_PATHS_REGULAR, DESC_FONT_SIZE)
-    
-    # Calculate text area width
-    text_area_width = ACHIEVEMENT_WIDTH - text_start_x - PADDING
-    
-    # Draw title
-    text_y = icon_y + 5  # Align with top of icon with small offset
-    title_lines = wrap_text(name, title_font, text_area_width)
-    for line in title_lines[:2]:  # Limit to 2 lines
-        draw.text((text_start_x, text_y), line, font=title_font, fill=TEXT_COLOR)
-        text_y += TITLE_FONT_SIZE + 2
-    
-    # Draw description
-    text_y += 4  # Space between title and description
-    desc_lines = wrap_text(description, desc_font, text_area_width)
-    for line in desc_lines[:2]:  # Limit to 2 lines
-        draw.text((text_start_x, text_y), line, font=desc_font, fill=DESC_COLOR)
-        text_y += DESC_FONT_SIZE + 1
-    
-    return achievement
+    @staticmethod
+    def draw_container(draw: ImageDraw.Draw, style: AchievementStyle) -> None:
+        """Draw the achievement container with rounded corners."""
+        container_padding = 2
+        x1, y1 = container_padding, container_padding
+        x2 = style.width - container_padding
+        y2 = style.height - container_padding
+        
+        # Draw main rectangles
+        draw.rectangle((x1 + style.corner_radius, y1, x2 - style.corner_radius, y2),
+                      fill=style.container_color)
+        draw.rectangle((x1, y1 + style.corner_radius, x2, y2 - style.corner_radius),
+                      fill=style.container_color)
+        
+        # Draw corners
+        for x, y, start, end in [
+            (x1, y1, 180, 270),
+            (x2 - style.corner_radius * 2, y1, 270, 360),
+            (x1, y2 - style.corner_radius * 2, 90, 180),
+            (x2 - style.corner_radius * 2, y2 - style.corner_radius * 2, 0, 90)
+        ]:
+            draw.pieslice(
+                (x, y, x + style.corner_radius * 2, y + style.corner_radius * 2),
+                start, end, fill=style.container_color
+            )
+
+    def create_achievement(
+        self,
+        name: str,
+        description: str,
+        icon_path: Path,
+        is_rare: bool = False
+    ) -> Image.Image:
+        """Create an achievement image with the specified parameters."""
+        # Create base image
+        achievement = Image.new('RGBA', 
+                              (self.style.width, self.style.height),
+                              self.style.background_color)
+        draw = ImageDraw.Draw(achievement)
+        
+        # Draw container
+        self.draw_container(draw, self.style)
+        
+        # Load and resize icon
+        icon = Image.open(icon_path).convert('RGBA')
+        icon = icon.resize((self.style.icon_size, self.style.icon_size),
+                         Image.Resampling.LANCZOS)
+        
+        # Calculate positions
+        icon_x = self.style.padding
+        icon_y = (self.style.height - self.style.icon_size) // 2
+        text_start_x = icon_x + self.style.icon_size + self.style.padding
+        
+        # Add glow for rare achievements
+        if is_rare:
+            GlowEffect.apply_glow(achievement, (icon_x, icon_y), self.style)
+        
+        # Paste icon
+        achievement.paste(icon, (icon_x, icon_y), icon)
+        
+        # Load fonts
+        title_font = self.font_manager.find_font(
+            FontManager.FONT_PATHS,
+            self.style.title_font_size
+        )
+        desc_font = self.font_manager.find_font(
+            FontManager.FONT_PATHS_REGULAR,
+            self.style.desc_font_size
+        )
+        
+        # Calculate text area width
+        text_area_width = self.style.width - text_start_x - self.style.padding
+        
+        # Render title
+        text_y = icon_y + 5
+        text_y = self.text_renderer.render_text_block(
+            draw, name, title_font,
+            (text_start_x, text_y),
+            text_area_width,
+            self.style.text_color,
+            self.style.title_font_size + 2
+        )
+        
+        # Render description
+        text_y += 4
+        self.text_renderer.render_text_block(
+            draw, description, desc_font,
+            (text_start_x, text_y),
+            text_area_width,
+            self.style.desc_color,
+            self.style.desc_font_size + 1
+        )
+        
+        return achievement
 
 @click.command()
 @click.option('--name', required=True, help='Name of the achievement')
 @click.option('--description', required=True, help='Description of the achievement')
-@click.option('--image', required=True, type=click.Path(exists=True), help='Path to the achievement icon image')
+@click.option('--image', required=True, type=click.Path(exists=True),
+              help='Path to the achievement icon image')
 @click.option('--rare', is_flag=True, help='Add golden glow effect for rare achievements')
 def generate_achievement(name: str, description: str, image: str, rare: bool):
     """Generate a Steam-style achievement image."""
@@ -190,7 +264,8 @@ def generate_achievement(name: str, description: str, image: str, rare: bool):
     output_path = output_dir / f'achievement_{timestamp}.png'
     
     # Generate the achievement
-    achievement = create_achievement_frame(name, description, Path(image), rare)
+    generator = AchievementGenerator()
+    achievement = generator.create_achievement(name, description, Path(image), rare)
     
     # Save the achievement
     achievement.save(output_path)
